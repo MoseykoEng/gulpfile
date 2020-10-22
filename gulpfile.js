@@ -1,90 +1,91 @@
 const gulp = require('gulp');
-const browserSync = require('browser-sync').create();
+// Browser & General plugins
+const browser = require('browser-sync').create();
 const concat = require('gulp-concat');
-const uglify = require('gulp-uglify-es').default;
+const del = require('del');
+// For HTML
+const pugConvert = require('gulp-pug');
+// For CSS
 const sass = require('gulp-sass');
 const autoprefixer = require('gulp-autoprefixer');
-const clean = require('gulp-clean-css');
-const image = require('gulp-imagemin');
-const newer = require('gulp-newer');
-const del = require('del');
+// For JS
+const uglify = require('gulp-uglify-es').default;
+// For images
+const imgmin = require('gulp-imagemin');
 
-const workPath = '#src';
-const buildPath = 'dist';
-const jsMain = 'app.js';
+// Config
+const workDir = '#src';
+const buildDir = 'dist';
 
-function browsersync(done) {
-    browserSync.init({
-        server: {
-            baseDir: `${workPath}/`,
-            port: 3000
-        },
-        nofify: false,
-        online: true
-    })
-
-    done();
+// Pug | Converting pug files to html files
+function pug() {
+    return gulp.src(`${workDir}/**/*.pug`, { base: `${workDir}` })
+        .pipe(pugConvert({ pretty: true }))
+        .pipe( gulp.dest(`${workDir}`) )
+        .pipe(browser.stream());
 }
-// Минификация JS скрипта
-function scripts() {
-    return gulp.src(`${workPath}/js/src/${jsMain}`)
-        .pipe(concat('script.min.js'))
-        .pipe(uglify())
-        .pipe(gulp.dest(`${workPath}/js/dist`))
-        .pipe(browserSync.stream());
-
-}
-// Компиляция из SCSS в min.css + минификация
-function style() {
-    return gulp.src(`${workPath}/styles/scss/styles.scss`)
-        .pipe(sass())
+// SCSS | Converting
+function styles() {
+    return gulp.src(`${workDir}/styles/scss/styles.scss`)
+        .pipe(sass({ outputStyle: 'compressed' }))
         .pipe(concat('styles.min.css'))
-        .pipe(autoprefixer({
-            overrideBrowserslist: ['last 10 versions'],
+        .pipe(autoprefixer({ 
+            overrideBrowserslist: ['last 2 versions'],
             grid: true
         }))
-        .pipe(gulp.dest(`${workPath}/styles/`));
+        .pipe(gulp.dest(`${workDir}/styles/`))
+        .pipe(browser.stream());
 }
-// Минификация изображений
-function imagein() {
-    return gulp.src(`${workPath}/images/src/**/*`)
-        .pipe(newer(`${workPath}/images/dist/`))
-        .pipe(image())
-        .pipe(gulp.dest(`${workPath}/images/dist/`));
+// JS | Minify JS scripts
+function scripts() {
+    return gulp.src([`${workDir}/js/modules/**/*.js`])
+        .pipe(concat('script.min.js'))
+        .pipe(uglify())
+        .pipe(gulp.dest(`${workDir}/js/`))
+        .pipe(browser.stream());
 }
-// Очистка изображений из собранного проекта
-function clearImage() {
-    return del(`${buildPath}/images/dist/**/*`, {
-        force: true
+// Image-min | Minify images (optipng don't work :c)
+function imagemin() {
+    gulp.src(`${workDir}/images/**/*`, { base: `${workDir}` })
+        .pipe(imgmin())
+        .pipe(`${workDir}/images/`);
+}
+// Browser sync | Init & create local host
+function browserSync() {
+    return browser.init({
+        server: {
+            baseDir: `${workDir}`,
+            port: 3000
+        },
+        notify: false,
+        online: false,
+        buffer: false
     });
 }
-// Очистка файлов и каталогов из собранного проекта
-function clearDist() {
-    return del(`${buildPath}/**/*`);
+// Browser sync | Reloading browser after changes
+function serve() {
+    gulp.watch([
+        `${workDir}/js/**/*.js`,
+        `!${workDir}/js/**/*.min.js`,
+    ], scripts);
+    gulp.watch(`${workDir}/styles/scss/**/*.scss`, styles).on('change', browser.reload);
+    gulp.watch(`${workDir}/**/*.pug`, pug).on('change', browser.reload);
+    // gulp.watch(`${workPath}/image/src/**/*`, imagein);
 }
-// Билд проекта
+// Build directory
 function build() {
     return gulp.src([
-        `${workPath}/styles/**/*.min.css`,
-        `${workPath}/js/**/*.min.js`,
-        `${workPath}/image/dest/**/*`,
-        `${workPath}/**/*.html`,
-    ], { base: workPath }).pipe(gulp.dest(`${buildPath}/`));
-}
-// Отслеживаем изменения в файлах и изображениях
-// Триггерим события
-function watch() {
-    gulp.watch([
-        `${workPath}/js/**/*.js`,
-        `!${workPath}/js/**/*.min.js`,
-    ], scripts);
-    gulp.watch(`${workPath}/styles/**/*.scss`, style);
-    gulp.watch(`${workPath}/**/*.html`).on('change', browserSync.reload);
-    gulp.watch(`${workPath}/image/src/**/*`, imagein);
+        `${workDir}/styles/fonts/**/*`,
+        `${workDir}/styles/**/*.min.css`,
+        `${workDir}/images/**/*`,
+        `${workDir}/js/**/*.min.js`,
+        `${workDir}/**/*.html`,
+    ], { base: workDir }).pipe(gulp.dest(`${buildDir}/`));
 }
 
-exports.build = gulp.series(clearDist, style, scripts, imagein, build);
-exports.clearDist = gulp.task(clearDist);
-exports.clearImg = gulp.task(clearImage);
-exports.host = gulp.task(browsersync);
-gulp.task('default', gulp.parallel(style, scripts, imagein, browsersync, watch) );
+function clearDist() {
+    return del(`${buildDir}/**/*`);
+}
+
+exports.build = gulp.series(clearDist, pug, styles, scripts, build);
+exports.default = gulp.parallel(pug, styles, scripts, browserSync, serve);
